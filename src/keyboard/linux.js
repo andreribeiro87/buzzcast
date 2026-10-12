@@ -45,20 +45,21 @@ export function init() {
   if (!display) throw new Error("XOpenDisplay failed (no X11 display / Wayland?)");
 }
 
-function pressKeysym(keysym) {
-  const code = X11.XKeysymToKeycode(display, BigInt(keysym));
-  if (!code) return;                       // keysym not on this keyboard
-  Xtst.XTestFakeKeyEvent(display, code, 1, 0n); // press
-  Xtst.XTestFakeKeyEvent(display, code, 0, 0n); // release
+function keycode(token) {
+  const ks = token[0] === "#"
+    ? VK_TO_KEYSYM[parseInt(token.slice(1), 16)]
+    : token.charCodeAt(0);                 // printable ASCII keysym == code point
+  return ks ? X11.XKeysymToKeycode(display, BigInt(ks)) : 0;   // 0 = not on this keyboard
+}
+
+function send(token, isPress) {
+  if (!display) return;
+  const code = keycode(token);
+  if (!code) return;
+  Xtst.XTestFakeKeyEvent(display, code, isPress ? 1 : 0, 0n);
   X11.XFlush(display);
 }
 
-export function tap(token) {
-  if (!display) return;
-  if (token[0] === "#") {
-    const ks = VK_TO_KEYSYM[parseInt(token.slice(1), 16)];
-    if (ks) pressKeysym(ks);
-  } else {
-    pressKeysym(token.charCodeAt(0));      // printable ASCII keysym == code point
-  }
-}
+// Press and release are separate so keyboard/index.js can hold the key down.
+export function down(token) { send(token, true); }
+export function up(token)   { send(token, false); }

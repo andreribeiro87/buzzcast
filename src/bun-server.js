@@ -6,10 +6,17 @@ import http from "http";
 import { spawn } from "child_process";
 import path from "path";
 import { initKeyboard, tapToken } from "./keyboard/index.js";
-import { openBrowser, CF as CFINFO, makeExecutable, extractTgz } from "./platform.js";
+import { openBrowser, CF as CFINFO, makeExecutable, extractTgz, DATA_DIR } from "./platform.js";
 import pkg from "../package.json";   // bundled at compile time → version embedded
 
 // ── Config ────────────────────────────────────────────────────────────────────
+// In a compiled binary import.meta.dir is Bun's virtual FS (B:\~BUN\root, /$bunfs/root),
+// which can't be written to. Writable data goes in DATA_DIR; APP_DIR (the binary's
+// folder, or the repo root in dev) is only searched for a user-supplied cloudflared.
+const IS_COMPILED = /[\\/](~BUN|\$bunfs)[\\/]/.test(import.meta.dir + path.sep);
+const APP_DIR = IS_COMPILED ? path.dirname(process.execPath) : path.join(import.meta.dir, "..");
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) { console.error("[data] mkdir failed:", e.message); }
+
 const PORT = Number(process.env.PORT) || 3000;
 const VERSION = pkg.version;
 const REPO = "bacoinz/buzzcast";
@@ -62,7 +69,7 @@ initKeyboard();
 // virtual-key in hex prefixed with "#" (e.g. "#08" = Backspace). Defaults derive
 // from KEYMAP + SK; the host "Keybinds" page can override and persist them.
 const BUTTONS = ["buzzer", "blue", "orange", "green", "yellow"];
-const KEYMAP_FILE = path.join(import.meta.dir, "keymap.json");
+const KEYMAP_FILE = path.join(DATA_DIR, "keymap.json");
 
 function defaultKeymap() {
   const km = {};
@@ -118,23 +125,49 @@ function getLanIp() {
 }
 
 // ── Cloudflare Tunnel ─────────────────────────────────────────────────────────
-const CF_LOCAL = path.join(import.meta.dir, CFINFO.filename);
+const CF_INSTALLED = path.join(DATA_DIR, CFINFO.filename);   // where the Install button puts it
 const CF_URL = CFINFO.url;
 
 let tunnelUrl = null;
 let cfFound = null;
 let install = { running: false, progress: 0, error: null };
+let cfProc = null;
 
-function startTunnel(cfPath) {
-  if (!cfPath) cfPath = fs.existsSync(CF_LOCAL) ? CF_LOCAL : "cloudflared";
-  if (cfPath === CF_LOCAL) makeExecutable(cfPath);   // ensure +x on Linux/macOS
-  tunnelUrl = null;
-  const cf = spawn(cfPath, ["tunnel", "--url", `http://localhost:${PORT}`], {
+// Our installed copy first, then one dropped next to the binary, then PATH.
+function findCloudflared() {
+  for (const p of [CF_INSTALLED, path.join(APP_DIR, CFINFO.filename)]) if (fs.existsSync(p)) return p;
+  return "cloudflared";
+}
+
+// Kill the running tunnel; resolves once the process has exited (Windows keeps the
+// .exe locked until then, so uninstall must wait before deleting it).
+function stopTunnel() {
+  const cf = cfProc;
+  cfProc = null; tunnelUrl = null;
+  if (!cf || cf.exitCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    cf.once("exit", resolve);
+    setTimeout(resolve, 3000);   // never hang the caller if "exit" doesn't arrive
+    cf.kill();
+  });
+}
+
+function startTunnel() {
+  stopTunnel();
+  const cfPath = findCloudflared();
+  if (cfPath !== "cloudflared") makeExecutable(cfPath);   // ensure +x on Linux/macOS
+  const cf = cfProc = spawn(cfPath, ["tunnel", "--url", `http://localhost:${PORT}`], {
     stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
   });
-  cf.on("spawn", () => { cfFound = true; });
-  cf.on("error", (err) => { if (err.code === "ENOENT") { cfFound = false; } });
+  cf.on("spawn", () => { if (cfProc === cf) cfFound = true; });
+  cf.on("error", (err) => {
+    if (cfProc !== cf) return;
+    cfProc = null;
+    if (err.code === "ENOENT") cfFound = false;
+  });
+  cf.on("exit", () => { if (cfProc === cf) cfProc = null; });
   const onData = (d) => {
+    if (cfProc !== cf) return;   // output from a tunnel we already replaced
     const m = d.toString().match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
     if (m && !tunnelUrl) { tunnelUrl = m[0]; console.log(`[tunnel] ${tunnelUrl}`); }
   };
@@ -284,6 +317,10 @@ async function hostPage() {
     .instr-body strong { color: #fff; }
     .instr-body .notice { background: rgba(193,18,31,0.18); border: 1px solid rgba(255,80,80,0.4); border-radius: 10px; padding: 9px 13px; margin-bottom: 12px; font-size: clamp(0.78rem,1.15vw,0.92rem); }
     .instr-body .tip { background: rgba(106,44,201,0.18); border: 1px solid rgba(168,85,247,0.4); border-radius: 10px; padding: 9px 13px; margin-top: 14px; font-size: clamp(0.78rem,1.15vw,0.92rem); }
+    .instr-body table { border-collapse: collapse; margin: 6px 0 2px; font-size: clamp(0.78rem,1.15vw,0.92rem); }
+    .instr-body th, .instr-body td { text-align: left; padding: 3px 14px 3px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .instr-body th { color: rgba(255,255,255,0.55); font-weight: 600; }
+    .modal-head .tab { flex: 0 0 auto; padding: 6px 14px; font-size: clamp(0.75rem,1.1vw,0.9rem); }
     .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 22px; border-bottom: 1px solid rgba(255,255,255,0.1); }
     .modal-head h3 { font-size: clamp(1.05rem,1.8vw,1.35rem); color: #ffd23f; font-weight: 800; }
     .modal-hint { font-size: clamp(0.68rem,1vw,0.82rem); color: rgba(255,255,255,0.5); }
@@ -315,7 +352,7 @@ async function hostPage() {
     <span class="ub-x" onclick="document.getElementById('update-banner').classList.remove('show')">✕</span>
   </div>
   <div class="players-ping" id="players-ping"></div>
-  <div class="host-footer"><a href="https://github.com/bacoinz/buzz-cast" target="_blank">GitHub</a></div>
+  <div class="host-footer"><a href="https://github.com/bacoinz/buzzcast" target="_blank">GitHub</a></div>
   <div class="columns">
     <div class="left">
       <img class="logo" src="/buzz-logo.png" alt="BuzzCast"/>
@@ -369,7 +406,13 @@ async function hostPage() {
 
   <div class="modal-overlay" id="instr-modal">
     <div class="modal modal-narrow">
-      <div class="modal-head"><h3 id="instr-title"></h3></div>
+      <div class="modal-head">
+        <h3 id="instr-title"></h3>
+        <div class="tabs">
+          <button class="tab instr-tab" data-emu="pcsx2" onclick="switchInstr('pcsx2')">PCSX2 · PS2</button>
+          <button class="tab instr-tab" data-emu="rpcs3" onclick="switchInstr('rpcs3')">RPCS3 · PS3</button>
+        </div>
+      </div>
       <div class="modal-body instr-body" id="instr-content"></div>
       <div class="modal-foot">
         <button class="btn-primary" id="instr-close" onclick="closeInstructions()"></button>
@@ -379,8 +422,8 @@ async function hostPage() {
 
   <script>
     const HOST_T = {
-      en: { title:"How to join", s1:"Connect to the <strong>same WiFi</strong> as this PC.", s2:"Open your phone camera and scan the <strong>QR code →</strong>", s3:"Pick a free slot and enter your name.", s4:"Press the buttons and <strong>play!</strong>", tab_local:"Local", tab_remote:"Remote", tunnel_starting:"⏳ Starting tunnel…", not_found:"Cloudflared wasn't detected in your system, would you like to install? You can remove it later.", install_btn:"Install (≈35 MB)", installing:"Downloading cloudflared…", install_error:"Install failed:", retry_btn:"Retry", kb_btn:"Keybinds", instr_btn:"PCSX2 Instructions", kb_title:"Keybinds", kb_hint:"Click a key field and press the key you want · click a button to test it", kb_save:"Save", kb_back:"Back", kb_reset:"Reset defaults", instr_title:"PCSX2 Setup", instr_close:"Close", update_text:v=>"New version "+v+" available!", update_btn:"Download" },
-      pt: { title:"Como entrar", s1:"Liga-te à <strong>mesma rede WiFi</strong> que este PC.", s2:"Aponta a câmara do telemóvel ao <strong>código QR →</strong>", s3:"Escolhe o teu lugar e escreve o teu nome.", s4:"Carrega nos botões e <strong>joga!</strong>", tab_local:"Local", tab_remote:"Remoto", tunnel_starting:"⏳ A iniciar túnel…", not_found:"O Cloudflared não foi detetado no sistema. Deseja instalar? Pode removê-lo mais tarde.", install_btn:"Instalar (≈35 MB)", installing:"A transferir cloudflared…", install_error:"Erro na instalação:", retry_btn:"Tentar novamente", kb_btn:"Teclas", instr_btn:"Instruções PCSX2", kb_title:"Configurar Teclas", kb_hint:"Clica num campo e prime a tecla que queres · clica num botão para testar", kb_save:"Guardar", kb_back:"Voltar", kb_reset:"Repor predefinições", instr_title:"Configurar PCSX2", instr_close:"Fechar", update_text:v=>"Nova versão "+v+" disponível!", update_btn:"Transferir" }
+      en: { title:"How to join", s1:"Connect to the <strong>same WiFi</strong> as this PC.", s2:"Open your phone camera and scan the <strong>QR code →</strong>", s3:"Pick a free slot and enter your name.", s4:"Press the buttons and <strong>play!</strong>", tab_local:"Local", tab_remote:"Remote", tunnel_starting:"⏳ Starting tunnel…", not_found:"Cloudflared wasn't detected in your system, would you like to install? You can remove it later.", install_btn:"Install (≈35 MB)", installing:"Downloading cloudflared…", install_error:"Install failed:", retry_btn:"Retry", kb_btn:"Keybinds", instr_btn:"Emulator Instructions", kb_title:"Keybinds", kb_hint:"Click a key field and press the key you want · click a button to test it", kb_save:"Save", kb_back:"Back", kb_reset:"Reset defaults", kb_save_error:"Couldn't save keybinds:", instr_title:"Emulator Setup", instr_close:"Close", update_text:v=>"New version "+v+" available!", update_btn:"Download" },
+      pt: { title:"Como entrar", s1:"Liga-te à <strong>mesma rede WiFi</strong> que este PC.", s2:"Aponta a câmara do telemóvel ao <strong>código QR →</strong>", s3:"Escolhe o teu lugar e escreve o teu nome.", s4:"Carrega nos botões e <strong>joga!</strong>", tab_local:"Local", tab_remote:"Remoto", tunnel_starting:"⏳ A iniciar túnel…", not_found:"O Cloudflared não foi detetado no sistema. Deseja instalar? Pode removê-lo mais tarde.", install_btn:"Instalar (≈35 MB)", installing:"A transferir cloudflared…", install_error:"Erro na instalação:", retry_btn:"Tentar novamente", kb_btn:"Teclas", instr_btn:"Instruções do emulador", kb_title:"Configurar Teclas", kb_hint:"Clica num campo e prime a tecla que queres · clica num botão para testar", kb_save:"Guardar", kb_back:"Voltar", kb_reset:"Repor predefinições", kb_save_error:"Não foi possível guardar as teclas:", instr_title:"Configurar o emulador", instr_close:"Fechar", update_text:v=>"Nova versão "+v+" disponível!", update_btn:"Transferir" }
     };
     function getLang() { return localStorage.getItem("buzz_lang") || "en"; }
     function setLang(l) { localStorage.setItem("buzz_lang", l); location.reload(); }
@@ -406,27 +449,65 @@ async function hostPage() {
       document.querySelectorAll(".flag-btn").forEach(b => b.classList.toggle("active", b.dataset.lang === getLang()));
     }
 
-    // ── PCSX2 instructions (popup) ──
-    const HOST_INSTR = {
-      en: '<div class="notice">⚠️ Works only with <strong>PCSX2</strong>. <strong>Buzz!: The Music Quiz</strong> (the first game) supports only 4 players, not 8.</div>'
-        + '<h4>1. Configure PCSX2 — up to 4 players</h4>'
-        + '<ol><li>In PCSX2 open <strong>Settings → Controllers</strong>.</li><li>Select <strong>USB Port 1</strong> and choose <strong>Buzz! Controller</strong>.</li><li>Map each button to the key shown in the <strong>🎮 Keybinds</strong> menu.</li></ol>'
-        + '<h4>2. For 5–8 players — add USB 2</h4>'
-        + '<ol><li>Still in <strong>Settings → Controllers</strong>, select <strong>USB Port 2</strong>.</li><li>Choose <strong>Buzz! Controller</strong> again and map players 5–8.</li></ol>'
-        + '<h4>3. Play</h4>'
-        + '<ol><li>Start the game in PCSX2.</li><li>Keep the <strong>PCSX2 window in focus</strong> — required to receive button presses.</li></ol>'
-        + '<div class="tip">💡 Open the <strong>🎮 Keybinds</strong> menu to see or change which keyboard key each button sends, then map the same keys in PCSX2.</div>',
-      pt: '<div class="notice">⚠️ Funciona apenas com o <strong>PCSX2</strong>. O <strong>Buzz!: The Music Quiz</strong> (o primeiro jogo) suporta apenas 4 jogadores, não 8.</div>'
-        + '<h4>1. Configurar o PCSX2 — até 4 jogadores</h4>'
-        + '<ol><li>No PCSX2 abre <strong>Settings → Controllers</strong>.</li><li>Seleciona <strong>USB Port 1</strong> e escolhe <strong>Buzz! Controller</strong>.</li><li>Mapeia cada botão para a tecla indicada no menu <strong>🎮 Teclas</strong>.</li></ol>'
-        + '<h4>2. Para 5–8 jogadores — adiciona USB 2</h4>'
-        + '<ol><li>Ainda em <strong>Settings → Controllers</strong>, seleciona <strong>USB Port 2</strong>.</li><li>Escolhe novamente <strong>Buzz! Controller</strong> e mapeia os jogadores 5–8.</li></ol>'
-        + '<h4>3. Jogar</h4>'
-        + '<ol><li>Inicia o jogo no PCSX2.</li><li>Mantém a <strong>janela do PCSX2 em foco</strong> — necessário para receber os botões.</li></ol>'
-        + '<div class="tip">💡 Abre o menu <strong>🎮 Teclas</strong> para ver ou alterar que tecla cada botão envia e mapeia as mesmas teclas no PCSX2.</div>'
+    // ── Emulator instructions (popup, one tab per emulator) ──
+    // RPCS3's Buzz! device reads each player's *pad* (Devices → Pads), so keys go
+    // key → pad button there, then pad button → Buzz! button in Emulated Devices.
+    // The PS3 has 7 pad ports, hence max 7 players ("2 controllers (5-7 players)").
+    const RPCS3_MAP = {
+      en: '<table><tr><th>BuzzCast button</th><th>Pad button</th></tr><tr><td>Buzzer (red)</td><td>R1</td></tr><tr><td>Yellow</td><td>Cross</td></tr><tr><td>Green</td><td>Circle</td></tr><tr><td>Orange</td><td>Square</td></tr><tr><td>Blue</td><td>Triangle</td></tr></table>',
+      pt: '<table><tr><th>Botão BuzzCast</th><th>Botão do pad</th></tr><tr><td>Buzzer (vermelho)</td><td>R1</td></tr><tr><td>Amarelo</td><td>Cross</td></tr><tr><td>Verde</td><td>Circle</td></tr><tr><td>Laranja</td><td>Square</td></tr><tr><td>Azul</td><td>Triangle</td></tr></table>'
     };
+    const HOST_INSTR = {
+      en: {
+        pcsx2: '<div class="notice">⚠️ <strong>Buzz!: The Music Quiz</strong> (the first PS2 game) supports only 4 players, not 8.</div>'
+          + '<h4>1. Configure PCSX2 — up to 4 players</h4>'
+          + '<ol><li>In PCSX2 open <strong>Settings → Controllers</strong>.</li><li>Select <strong>USB Port 1</strong> and choose <strong>Buzz! Controller</strong>.</li><li>Map each button to the key shown in the <strong>🎮 Keybinds</strong> menu.</li></ol>'
+          + '<h4>2. For 5–8 players — add USB 2</h4>'
+          + '<ol><li>Still in <strong>Settings → Controllers</strong>, select <strong>USB Port 2</strong>.</li><li>Choose <strong>Buzz! Controller</strong> again and map players 5–8.</li></ol>'
+          + '<h4>3. Play</h4>'
+          + '<ol><li>Start the game in PCSX2.</li><li>Keep the <strong>PCSX2 window in focus</strong> — required to receive button presses.</li></ol>'
+          + '<div class="tip">💡 While mapping, you can tap the button on the phone instead of pressing the key — BuzzCast sends it to the focused window.</div>',
+        rpcs3: '<div class="notice">⚠️ With Buzz!, RPCS3 supports up to <strong>7 players</strong> (the PS3 has 7 controller ports) — player 8 can\\'t be used.</div>'
+          + '<h4>1. Turn on the emulated Buzz! controllers</h4>'
+          + '<ol><li>In RPCS3 open <strong>Configuration → Input/Output</strong>.</li><li>In <strong>Buzz! Emulated Controller</strong> choose <strong>1 controller (1-4 players)</strong> or <strong>2 controllers (5-7 players)</strong>.</li><li>Click <strong>Apply</strong>, then <strong>Save</strong>.</li></ol>'
+          + '<h4>2. Give each player a keyboard pad</h4>'
+          + '<ol><li>Open <strong>Configuration → Devices → Pads</strong>.</li><li>On each <strong>Player</strong> tab (1, 2, …) set the handler to <strong>Keyboard</strong>.</li><li>Map that player\\'s keys from the <strong>🎮 Keybinds</strong> menu to these pad buttons, then <strong>Save</strong>:' + RPCS3_MAP.en + '</li></ol>'
+          + '<h4>3. Map the Buzz! buttons</h4>'
+          + '<ol><li>Open <strong>Configuration → Emulated Devices → Buzz</strong>.</li><li>For each Buzz! controller (Player 1, 2, …) map the buttons to the same pad buttons as above (they\\'re the defaults) and save.</li></ol>'
+          + '<h4>4. Play</h4>'
+          + '<ol><li>Start the game in RPCS3.</li><li>Keep the <strong>RPCS3 game window in focus</strong> — required to receive button presses.</li></ol>'
+          + '<div class="tip">💡 While mapping, you can tap the button on the phone instead of pressing the key — BuzzCast sends it to the focused window.</div>'
+      },
+      pt: {
+        pcsx2: '<div class="notice">⚠️ O <strong>Buzz!: The Music Quiz</strong> (o primeiro jogo da PS2) suporta apenas 4 jogadores, não 8.</div>'
+          + '<h4>1. Configurar o PCSX2 — até 4 jogadores</h4>'
+          + '<ol><li>No PCSX2 abre <strong>Settings → Controllers</strong>.</li><li>Seleciona <strong>USB Port 1</strong> e escolhe <strong>Buzz! Controller</strong>.</li><li>Mapeia cada botão para a tecla indicada no menu <strong>🎮 Teclas</strong>.</li></ol>'
+          + '<h4>2. Para 5–8 jogadores — adiciona USB 2</h4>'
+          + '<ol><li>Ainda em <strong>Settings → Controllers</strong>, seleciona <strong>USB Port 2</strong>.</li><li>Escolhe novamente <strong>Buzz! Controller</strong> e mapeia os jogadores 5–8.</li></ol>'
+          + '<h4>3. Jogar</h4>'
+          + '<ol><li>Inicia o jogo no PCSX2.</li><li>Mantém a <strong>janela do PCSX2 em foco</strong> — necessário para receber os botões.</li></ol>'
+          + '<div class="tip">💡 Ao mapear, podes carregar no botão do telemóvel em vez de premir a tecla — a BuzzCast envia-a para a janela em foco.</div>',
+        rpcs3: '<div class="notice">⚠️ Com o Buzz!, o RPCS3 suporta até <strong>7 jogadores</strong> (a PS3 tem 7 portas de comando) — o jogador 8 não pode ser usado.</div>'
+          + '<h4>1. Ativar os comandos Buzz! emulados</h4>'
+          + '<ol><li>No RPCS3 abre <strong>Configuration → Input/Output</strong>.</li><li>Em <strong>Buzz! Emulated Controller</strong> escolhe <strong>1 controller (1-4 players)</strong> ou <strong>2 controllers (5-7 players)</strong>.</li><li>Clica em <strong>Apply</strong> e depois em <strong>Save</strong>.</li></ol>'
+          + '<h4>2. Dar a cada jogador um pad de teclado</h4>'
+          + '<ol><li>Abre <strong>Configuration → Devices → Pads</strong>.</li><li>Em cada separador <strong>Player</strong> (1, 2, …) escolhe o handler <strong>Keyboard</strong>.</li><li>Mapeia as teclas desse jogador (menu <strong>🎮 Teclas</strong>) para estes botões do pad e clica em <strong>Save</strong>:' + RPCS3_MAP.pt + '</li></ol>'
+          + '<h4>3. Mapear os botões Buzz!</h4>'
+          + '<ol><li>Abre <strong>Configuration → Emulated Devices → Buzz</strong>.</li><li>Para cada comando Buzz! (Player 1, 2, …) mapeia os botões para os mesmos botões do pad indicados acima (são os predefinidos) e guarda.</li></ol>'
+          + '<h4>4. Jogar</h4>'
+          + '<ol><li>Inicia o jogo no RPCS3.</li><li>Mantém a <strong>janela do jogo do RPCS3 em foco</strong> — necessário para receber os botões.</li></ol>'
+          + '<div class="tip">💡 Ao mapear, podes carregar no botão do telemóvel em vez de premir a tecla — a BuzzCast envia-a para a janela em foco.</div>'
+      }
+    };
+    let instrEmu = localStorage.getItem("buzz_emu") || "pcsx2";
+    function renderInstructions() {
+      const set = HOST_INSTR[getLang()] || HOST_INSTR.en;
+      document.getElementById("instr-content").innerHTML = set[instrEmu] || set.pcsx2;
+      document.querySelectorAll(".instr-tab").forEach(b => b.classList.toggle("active", b.dataset.emu === instrEmu));
+    }
+    function switchInstr(emu) { instrEmu = emu; localStorage.setItem("buzz_emu", emu); renderInstructions(); }
     function openInstructions() {
-      document.getElementById("instr-content").innerHTML = HOST_INSTR[getLang()] || HOST_INSTR.en;
+      renderInstructions();
       document.getElementById("instr-modal").classList.add("show");
     }
     function closeInstructions() { document.getElementById("instr-modal").classList.remove("show"); }
@@ -500,7 +581,9 @@ async function hostPage() {
     function closeKeybinds() { document.getElementById("kb-modal").classList.remove("show"); }
     async function resetKeybinds() { kbData = await fetch("/api/keymap?defaults=1").then(r => r.json()); buildKbGrid(); }
     async function saveKeybinds() {
-      await fetch("/api/keymap", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(kbData) });
+      const r = await fetch("/api/keymap", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(kbData) })
+        .then(r => r.json()).catch(e => ({ ok:false, error:e.message }));
+      if (!r.ok) { alert(tx("kb_save_error") + " " + (r.error || "")); return; }
       closeKeybinds();
     }
     document.getElementById("kb-modal").addEventListener("click", (e) => { if (e.target.id === "kb-modal") closeKeybinds(); });
@@ -527,25 +610,27 @@ async function hostPage() {
       inner.innerHTML = \`<div style="text-align:center"><div style="font-size:clamp(0.8rem,1.3vw,1rem);color:#ff5555;margin-bottom:0.4em">\${tx("install_error")}</div><div style="font-size:clamp(0.7rem,1.1vw,0.85rem);opacity:0.55;margin-bottom:1em">\${msg}</div><button onclick="doInstall()" style="background:rgba(255,255,255,0.12);border:none;border-radius:10px;color:#fff;font-size:clamp(0.8rem,1.2vw,0.95rem);font-weight:700;padding:8px 18px;cursor:pointer">\${tx("retry_btn")}</button></div>\`;
       remoteUrl.textContent = "";
     }
-    async function showQR(qrUrl) {
+    async function showQR(qrUrl, cfInstalled) {
       if (qrLoaded) return; qrLoaded = true;
       const res = await fetch("/api/qr?url=" + encodeURIComponent(qrUrl));
       inner.innerHTML = await res.text();
       document.getElementById("remote-qr-wrap").classList.add("has-qr");
       remoteUrl.textContent = qrUrl;
-      document.getElementById("uninstall-btn").style.display = "inline-block";
+      // Only offer to remove the copy BuzzCast installed, not one the user provided.
+      document.getElementById("uninstall-btn").style.display = cfInstalled ? "inline-block" : "none";
     }
     async function doUninstall() {
       if (!confirm("Remove cloudflared from this computer?")) return;
       document.getElementById("uninstall-btn").style.display = "none";
-      await fetch("/api/uninstall-cloudflared", { method: "POST" });
+      const r = await fetch("/api/uninstall-cloudflared", { method: "POST" }).then(r => r.json()).catch(e => ({ ok:false, error:e.message }));
+      if (!r.ok) alert(r.error);
       qrLoaded = false; document.getElementById("remote-qr-wrap").classList.remove("has-qr"); pollRemote();
     }
     async function doInstall() { showInstalling(0); await fetch("/api/install-cloudflared", { method: "POST" }); }
     async function pollRemote() {
       try {
         const s = await fetch("/api/tunnel-status").then(r => r.json());
-        if (s.tunnelUrl) { await showQR(s.tunnelUrl); return; }
+        if (s.tunnelUrl) { await showQR(s.tunnelUrl, s.cfInstalled); return; }
         if (s.installError) showError(s.installError);
         else if (s.installing) showInstalling(s.installProgress);
         else if (s.cfFound === false) showNotFound();
@@ -617,6 +702,37 @@ function broadcastSlots() {
   for (const ws of wsClients) ws.send(msg);
 }
 
+// ── Host-only routes ──────────────────────────────────────────────────────────
+// Phones (LAN or tunnel) can reach every route, so the host page and its admin APIs
+// only answer requests made on this PC. Tunnel traffic arrives from cloudflared on
+// loopback, so it's told apart by the proxy headers Cloudflare adds. The Host and
+// Origin checks stop other websites open in the host's browser (CSRF / DNS rebinding).
+const HOST_ONLY = new Set([
+  "/host", "/api/tunnel-status", "/api/qr", "/api/keymap", "/api/update-check",
+  "/api/install-cloudflared", "/api/uninstall-cloudflared", "/api/shutdown",
+]);
+
+function localAddresses() {
+  const s = new Set(["127.0.0.1", "::1", "localhost"]);
+  for (const list of Object.values(os.networkInterfaces())) for (const i of list || []) s.add(i.address);
+  return s;
+}
+
+function isHostRequest(req, server) {
+  const h = req.headers;
+  if (h.has("cf-connecting-ip") || h.has("cf-ray") || h.has("x-forwarded-for")) return false;
+  const local = localAddresses();
+  const ip = (server.requestIP(req)?.address || "").replace(/^::ffff:/, "");
+  const host = new URL(req.url).hostname.replace(/^\[|\]$/g, "");
+  if (!local.has(ip) || !local.has(host)) return false;
+  const origin = h.get("origin");
+  if (origin) {
+    try { if (!local.has(new URL(origin).hostname.replace(/^\[|\]$/g, ""))) return false; }
+    catch { return false; }
+  }
+  return true;
+}
+
 // ── Bun.serve ─────────────────────────────────────────────────────────────────
 Bun.serve({
   port: PORT,
@@ -630,29 +746,39 @@ Bun.serve({
       return;
     }
 
+    if (HOST_ONLY.has(pathname) && !isHostRequest(req, server))
+      return new Response("Forbidden — host only", { status: 403 });
+
     // ── API routes ────────────────────────────────────────────────────────
     if (pathname === "/host")
       return new Response(await hostPage(), { headers: { "Content-Type": "text/html;charset=utf-8" } });
 
     if (pathname === "/api/tunnel-status")
-      return Response.json({ tunnelUrl, cfFound, cfInstalled: fs.existsSync(CF_LOCAL), installing: install.running, installProgress: install.progress, installError: install.error });
+      return Response.json({ tunnelUrl, cfFound, cfInstalled: fs.existsSync(CF_INSTALLED), installing: install.running, installProgress: install.progress, installError: install.error });
 
     if (pathname === "/api/install-cloudflared" && req.method === "POST") {
       if (install.running) return Response.json({ ok: false, reason: "already running" });
       install = { running: true, progress: 0, error: null };
       // macOS ships cloudflared as a .tgz: download it, then extract the binary.
-      const dlTarget = CFINFO.isTgz ? CF_LOCAL + ".tgz" : CF_LOCAL;
+      const dlTarget = CFINFO.isTgz ? CF_INSTALLED + ".tgz" : CF_INSTALLED;
       downloadFile(CF_URL, dlTarget, (p) => { install.progress = p; })
-        .then(() => CFINFO.isTgz ? extractTgz(dlTarget, CF_LOCAL) : makeExecutable(CF_LOCAL))
-        .then(() => { install.running = false; install.progress = 100; startTunnel(CF_LOCAL); })
+        .then(() => CFINFO.isTgz ? extractTgz(dlTarget, CF_INSTALLED) : makeExecutable(CF_INSTALLED))
+        .then(() => { install.running = false; install.progress = 100; startTunnel(); })
         .catch((err) => { install.running = false; install.error = err.message; });
       return Response.json({ ok: true });
     }
 
     if (pathname === "/api/uninstall-cloudflared" && req.method === "POST") {
       try {
-        if (fs.existsSync(CF_LOCAL)) fs.unlinkSync(CF_LOCAL);
-        cfFound = false; tunnelUrl = null; install = { running: false, progress: 0, error: null };
+        await stopTunnel();
+        // Windows may hold the .exe lock for a moment after the process exits.
+        for (let i = 0; fs.existsSync(CF_INSTALLED); i++) {
+          try { fs.unlinkSync(CF_INSTALLED); }
+          catch (e) { if (i >= 10) throw e; await Bun.sleep(150); }
+        }
+        install = { running: false, progress: 0, error: null };
+        cfFound = null;
+        startTunnel();   // falls back to a cloudflared next to the binary / on PATH, if any
         return Response.json({ ok: true });
       } catch (err) { return Response.json({ ok: false, error: err.message }); }
     }
@@ -681,6 +807,7 @@ Bun.serve({
     }
 
     if (pathname === "/api/shutdown" && req.method === "POST") {
+      stopTunnel();
       setTimeout(() => process.exit(0), 300);
       return Response.json({ ok: true });
     }

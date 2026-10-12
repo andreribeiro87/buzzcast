@@ -27,26 +27,31 @@ export function init() {
   shiftScan = user32.MapVirtualKeyW(VK_SHIFT, MAPVK_VK_TO_VSC);
 }
 
-function sendVk(vk) {
-  const sc = user32.MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
-  user32.keybd_event(vk, sc, KEYEVENTF_SCANCODE, 0n);
-  user32.keybd_event(vk, sc, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP, 0n);
+// Resolve a token to { vk, sc, shift } (null if the char isn't typeable on this layout).
+function resolve(token) {
+  let vk, shift = false;
+  if (token[0] === "#") vk = parseInt(token.slice(1), 16);
+  else {
+    const res = user32.VkKeyScanW(token.charCodeAt(0));
+    vk = res & 0xff;
+    if (vk === 0xff) return null;
+    shift = (res & 0x100) !== 0;
+  }
+  return { vk, sc: user32.MapVirtualKeyW(vk, MAPVK_VK_TO_VSC), shift };
 }
 
-function sendChar(ch) {
-  const res = user32.VkKeyScanW(ch.charCodeAt(0));
-  const vk = res & 0xff;
-  if (vk === 0xff) return;                 // char not typeable on current layout
-  const needShift = (res & 0x100) !== 0;
-  const sc = user32.MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
-  if (needShift) user32.keybd_event(VK_SHIFT, shiftScan, KEYEVENTF_SCANCODE, 0n);
-  user32.keybd_event(vk, sc, KEYEVENTF_SCANCODE, 0n);
-  user32.keybd_event(vk, sc, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP, 0n);
-  if (needShift) user32.keybd_event(VK_SHIFT, shiftScan, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP, 0n);
+// Press and release are separate so keyboard/index.js can hold the key down long
+// enough for emulators that sample the pad state once per poll/frame.
+export function down(token) {
+  const k = user32 && resolve(token);
+  if (!k) return;
+  if (k.shift) user32.keybd_event(VK_SHIFT, shiftScan, KEYEVENTF_SCANCODE, 0n);
+  user32.keybd_event(k.vk, k.sc, KEYEVENTF_SCANCODE, 0n);
 }
 
-export function tap(token) {
-  if (!user32) return;
-  if (token[0] === "#") sendVk(parseInt(token.slice(1), 16));
-  else sendChar(token);
+export function up(token) {
+  const k = user32 && resolve(token);
+  if (!k) return;
+  user32.keybd_event(k.vk, k.sc, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP, 0n);
+  if (k.shift) user32.keybd_event(VK_SHIFT, shiftScan, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP, 0n);
 }

@@ -1,37 +1,48 @@
 # BuzzCast
 
-Turn any phone into a Buzz! quiz controller for PCSX2 — local or remote via Cloudflare Tunnel + Discord/Parsec streaming. Players open a browser, pick a slot (1–8) and tap the buttons — just like the real plastic buzzers. Supports up to **8 players**.
+Turn any phone into a Buzz! quiz controller for **PCSX2** (PS2) and **RPCS3** (PS3) — local or remote via Cloudflare Tunnel + Discord/Parsec streaming. Players open a browser, pick a slot (1–8) and tap the buttons — just like the real plastic buzzers. Supports up to **8 players** (7 on RPCS3).
 
-BuzzCast runs on the host PC, serves a web app on the local network, and emulates a **keyboard**. PCSX2 can't tell the difference from a real keyboard — you just map each Buzz pad to the keys below.
+BuzzCast runs on the host PC, serves a web app on the local network, and emulates a **keyboard**. The emulator can't tell the difference from a real keyboard — you just map each Buzz pad to the keys below.
 
 **Available for Windows, macOS and Linux** — a single standalone download per OS, no installs needed.
 
 <img width="437" height="250" alt="imagem" src="https://github.com/user-attachments/assets/e0903380-6361-4574-a71b-a85bf7dc6c76" /> <img width="165" height="250" alt="imagem" src="https://github.com/user-attachments/assets/ec173812-8fc7-45ef-a14b-ae9235709bf4" /> <img width="119" height="250" alt="imagem" src="https://github.com/user-attachments/assets/1cc24d16-a335-4153-baa7-f4b8474e7f6b" />
 
+---
 
+## What's new in v1.4
+
+- 🎮 **RPCS3 (PS3) support** — setup steps for PCSX2 and RPCS3 in the host's **Emulator Instructions** popup ([details below](#configuring-rpcs3)).
+- ✅ **Buttons now register in-game** — presses that reached the emulator's mapping screen but were ignored during the game are fixed (keys are now held ~80 ms instead of <1 ms).
+- 💾 **Keybinds are saved** between runs in the downloadable app, and the **Install / Uninstall cloudflared** buttons work there too ([where files are kept](#where-buzzcast-keeps-its-files)).
+- 🔒 **Host-only controls** — remote players can no longer reach the Host page, change keys or shut BuzzCast down through the tunnel link.
+- 📱 Better **screen wake lock** on iPhone, plus smaller fixes.
+
+Full history in the [CHANGELOG](CHANGELOG.md).
 
 ---
 
 ## How it works
 
 ```
-Phone (browser) ──WebSocket──► BuzzCast on PC ──keyboard emulation──► PCSX2
+Phone (browser) ──WebSocket──► BuzzCast on PC ──keyboard emulation──► PCSX2 / RPCS3
 ```
 
-- **Up to 8 players** on their own phones — no apps, no pairing.
+- **Up to 8 players** on their own phones (7 on RPCS3) — no apps, no pairing.
 - **Local or remote** play (LAN QR code or Cloudflare Tunnel for online).
+- **Works with PCSX2 and RPCS3** — setup steps for both are in the host's **Emulator Instructions** popup.
 - **Low-latency keyboard injection**, layout-aware, native per OS (Windows `keybd_event`, Linux X11 `XTest`, macOS CoreGraphics).
 - **Customisable keys** — change any pad's key from the host's **Keybinds** menu (with live test feedback); defaults below.
 - **Live latency indicator** per player, on both the controller and the host screen.
 - **Auto-reconnect** with exponential backoff if WiFi drops.
-- **Screen stays awake** — the controller holds a wake lock so phones don't dim mid-game.
+- **Screen stays awake** — the controller holds a wake lock so phones don't dim mid-game (Android Chrome; iOS Safari needs HTTPS — see [Troubleshooting](#troubleshooting)).
 - **Update notifications** — the host checks GitHub and shows a banner when a new version is out.
 
 ---
 
 ## Requirements
 
-- A **Windows, macOS or Linux PC** running PCSX2 with a Buzz! game.
+- A **Windows, macOS or Linux PC** running **PCSX2** (PS2) or **RPCS3** (PS3) with a Buzz! game.
 - Phones on the **same WiFi** as the PC (for local play).
 - No installs needed on phones — just a browser.
 - Linux: an **X11** session (Wayland not yet supported) with `libxtst6` installed. macOS: grant **Accessibility** permission when asked.
@@ -110,17 +121,29 @@ This works great with any screen-sharing or streaming app:
 ### Setup
 
 1. In the **Host** page, click the **Remote** tab.
-2. If Cloudflare isn't detected, click **Install** — BuzzCast downloads it silently (~35 MB, no admin rights needed). You can uninstall it later from the same tab.
+2. If Cloudflare isn't detected, click **Install** — BuzzCast downloads it silently (~35 MB, no admin rights needed). You can uninstall it later from the same tab. (Already have `cloudflared`? Put it on your `PATH` or next to the BuzzCast executable and it's picked up automatically.)
 3. Once the tunnel starts, a QR code and a `https://…trycloudflare.com` URL appear.
 4. Remote players open that URL on their phones — they join the **same lobby** as local players.
 
 > The host streams their screen via Discord/Parsec/etc. while remote players control Buzz! from their own phones using the tunnel URL.
 
+> 🔒 The **Host** page and its controls (Keybinds, Install/Uninstall, Shut down) only work from the PC running BuzzCast. Players — local or through the tunnel — can only reach the lobby and controller.
+
+### Where BuzzCast keeps its files
+
+Your saved **Keybinds** (`keymap.json`) and the `cloudflared` downloaded by the Install button live in a per-user folder:
+
+| OS | Folder |
+|---|---|
+| Windows | `%LOCALAPPDATA%\BuzzCast` |
+| macOS | `~/Library/Application Support/BuzzCast` |
+| Linux | `~/.local/share/buzzcast` (or `$XDG_DATA_HOME/buzzcast`) |
+
 ---
 
-## PCSX2 key map
+## Key map
 
-**Default** keys — 8 players × 5 buttons = 40 unique keys. You can change any of them from the **Keybinds** menu on the host page (and test each button live); whatever you set is what PCSX2 should be mapped to.
+**Default** keys — 8 players × 5 buttons = 40 unique keys. You can change any of them from the **Keybinds** menu on the host page (and test each button live); whatever you set is what the emulator should be mapped to.
 
 | Player | Buzzer (●) | Blue | Orange | Green | Yellow |
 |-------:|:----------:|:----:|:------:|:-----:|:------:|
@@ -145,9 +168,31 @@ This works great with any screen-sharing or streaming app:
 4. For each pad, map **Buzzer / Blue / Orange / Green / Yellow** to the keys shown in the host's **Keybinds** menu (defaults in the table above).
 5. Save and start the game with the PCSX2 window in focus.
 
-> The host page also has a **PCSX2 Instructions** popup with these same steps.
-
 > ⚠️ **Buzz!: The Music Quiz** (the first game in the series) only supports 4 players.
+
+## Configuring RPCS3
+
+RPCS3's emulated Buzz! controllers read each player's **pad**, so keys are mapped in two hops: keyboard key → pad button (Pads), then pad button → Buzz! button (Emulated Devices).
+
+1. Open **Configuration → Input/Output**. In **Buzz! Emulated Controller** choose **1 controller (1-4 players)** or **2 controllers (5-7 players)**, then **Apply** and **Save**.
+2. Open **Configuration → Devices → Pads**. On each **Player** tab set the handler to **Keyboard** and map that player's keys (from the **Keybinds** menu) to these pad buttons:
+
+   | BuzzCast button | Pad button |
+   |---|---|
+   | Buzzer (red) | R1 |
+   | Yellow | Cross |
+   | Green | Circle |
+   | Orange | Square |
+   | Blue | Triangle |
+
+3. Open **Configuration → Emulated Devices → Buzz** and, for each Buzz! controller, map the buttons to the same pad buttons (these are RPCS3's defaults).
+4. Start the game and keep the **RPCS3 game window in focus**.
+
+> ⚠️ With Buzz!, RPCS3 supports up to **7 players** — the PS3 has 7 controller ports, so player 8 can't be used.
+
+> The host page has an **Emulator Instructions** popup with the PCSX2 and RPCS3 steps.
+
+> 💡 While mapping in either emulator, you can tap the button on the phone instead of pressing the key — BuzzCast sends it to the focused window.
 
 ---
 
@@ -155,16 +200,16 @@ This works great with any screen-sharing or streaming app:
 
 | Problem | Fix |
 |---|---|
-| Buttons do nothing in-game | PCSX2 window is not in focus, or key mapping doesn't match the table. |
+| Buttons do nothing in-game | The emulator's game window is not in focus, or the key mapping doesn't match the **Keybinds** menu. |
+| The emulator picks up the key while mapping, but nothing happens in-game | Update to **v1.4** or later. v1.0–v1.3 released each key after <1 ms, faster than PCSX2/RPCS3 read the Buzz! pad; keys are now held for ~80 ms. |
+| Buttons do nothing in-game (Windows, emulator run as administrator) | Windows blocks simulated keys from a normal app to an admin app. Run BuzzCast and the emulator the same way (both normal, or both as administrator). |
 | Phone can't open the page | Make sure the phone is on the same WiFi and your firewall allows port 3000. |
 | Buttons do nothing (Linux) | Needs an **X11** session (not Wayland) with `libxtst6` installed. |
 | Buttons do nothing (macOS) | Grant **Accessibility** permission: System Settings → Privacy & Security → Accessibility. |
-| Remote tab shows "not found" | Click Install to download Cloudflare — or install it manually and restart BuzzCast. |
+| Remote tab shows "not found" | Click Install to download Cloudflare — or install it manually (on `PATH` or next to BuzzCast) and restart BuzzCast. |
+| Phone shows "Forbidden — host only" | The Host page only opens on the PC running BuzzCast. Players should use the lobby link / QR code. |
 | Remote QR never appears | Check that port 3000 is not blocked by a firewall or antivirus. |
-
-## WIP
-
-RPCS3 integration.
+| Screen still dims on iPhone (wake lock) | The Wake Lock API requires **HTTPS** and a real tap to activate on iOS Safari/Firefox. Plain local WiFi is served over `http://`, which iOS treats as insecure and blocks the API — join via the **Remote** tab's `https://…trycloudflare.com` link instead, or just tap a button once to re-arm it. Works over plain local WiFi on Android Chrome. |
 
 ---
 

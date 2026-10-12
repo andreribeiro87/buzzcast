@@ -6,7 +6,7 @@
 // silently drops the events.
 //
 // macOS posts events by *virtual keycode* (physical key position), so we map chars
-// using a US ANSI layout table — which is fine here because PCSX2 is mapped by
+// using a US ANSI layout table — which is fine here because emulators map keys by
 // physical key anyway. Tokens: a single char or "#XX" = raw Win32 VK in hex.
 
 // Char → US-ANSI virtual keycode (kVK_ANSI_*).
@@ -41,19 +41,16 @@ export function init() {
 
 const kCGHIDEventTap = 0;
 
-function pressKey(code) {
-  for (const down of [true, false]) {
-    const ev = CG.CGEventCreateKeyboardEvent(null, code, down);
-    if (!ev) continue;
-    CG.CGEventPost(kCGHIDEventTap, ev);
-    CF.CFRelease(ev);
-  }
+function send(token, isDown) {
+  if (!CG) return;
+  const code = token[0] === "#" ? VK_TO_KEY[parseInt(token.slice(1), 16)] : CHAR_TO_KEY[token.toLowerCase()];
+  if (code === undefined) return;
+  const ev = CG.CGEventCreateKeyboardEvent(null, code, isDown);
+  if (!ev) return;
+  CG.CGEventPost(kCGHIDEventTap, ev);
+  CF.CFRelease(ev);
 }
 
-export function tap(token) {
-  if (!CG) return;
-  let code;
-  if (token[0] === "#") code = VK_TO_KEY[parseInt(token.slice(1), 16)];
-  else code = CHAR_TO_KEY[token.toLowerCase()];
-  if (code !== undefined) pressKey(code);
-}
+// Press and release are separate so keyboard/index.js can hold the key down.
+export function down(token) { send(token, true); }
+export function up(token)   { send(token, false); }

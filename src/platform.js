@@ -2,8 +2,19 @@
 
 import { spawn } from "child_process";
 import fs from "fs";
+import os from "os";
+import path from "path";
 
 const P = process.platform;
+
+// Per-user, writable folder for keymap.json and the downloaded cloudflared. A compiled
+// binary can't write next to itself reliably (Bun's virtual FS, read-only AppImage
+// mount, inside a .app bundle), so data lives in the OS's usual app-data location.
+const HOME = os.homedir();
+export const DATA_DIR =
+  P === "win32"  ? path.join(process.env.LOCALAPPDATA || path.join(HOME, "AppData", "Local"), "BuzzCast") :
+  P === "darwin" ? path.join(HOME, "Library", "Application Support", "BuzzCast") :
+                   path.join(process.env.XDG_DATA_HOME || path.join(HOME, ".local", "share"), "buzzcast");
 
 // Open a URL in the user's default browser.
 export function openBrowser(url) {
@@ -33,8 +44,7 @@ export function makeExecutable(file) {
 // Extract the cloudflared binary out of the macOS .tgz into `dest`.
 export function extractTgz(tgzPath, dest) {
   return new Promise((resolve, reject) => {
-    const dir = dest.slice(0, dest.lastIndexOf("/") + 1) || "./";
-    const p = spawn("tar", ["-xzf", tgzPath, "-C", dir], { stdio: "ignore" });
+    const p = spawn("tar", ["-xzf", tgzPath, "-C", path.dirname(dest)], { stdio: "ignore" });
     p.on("error", reject);
     p.on("exit", (code) => {
       if (code !== 0) return reject(new Error(`tar exited ${code}`));

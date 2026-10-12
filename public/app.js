@@ -95,16 +95,19 @@ function connect() {
 
 // ── Screen Wake Lock: keep the phone awake while the controller is open ──
 let wakeLock = null;
+let wakeLockPending = false;
 async function requestWakeLock() {
-  if (!("wakeLock" in navigator)) return;
+  if (wakeLock || wakeLockPending || !("wakeLock" in navigator)) return;
+  wakeLockPending = true;
   try {
     wakeLock = await navigator.wakeLock.request("screen");
     wakeLock.addEventListener("release", () => { wakeLock = null; });
   } catch { /* denied / unsupported / not visible — ignore */ }
+  finally { wakeLockPending = false; }
 }
 // Browsers drop the lock when the tab is hidden; re-acquire when it returns.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && !wakeLock) requestWakeLock();
+  if (document.visibilityState === "visible") requestWakeLock();
 });
 
 askName(false);
@@ -140,8 +143,10 @@ function release(el) {
 
 document.querySelectorAll("[data-button]").forEach((el) => {
   const btn = el.dataset.button;
-  const onDown = (e) => { e.preventDefault(); press(btn, el); };
-  const onUp = (e) => { e.preventDefault(); release(el); };
+  // iOS Safari only grants the wake lock off a user gesture. touchstart doesn't count
+  // as one (touchend and mousedown do), so re-request on both edges of a press.
+  const onDown = (e) => { e.preventDefault(); requestWakeLock(); press(btn, el); };
+  const onUp = (e) => { e.preventDefault(); requestWakeLock(); release(el); };
   el.addEventListener("touchstart", onDown, { passive: false });
   el.addEventListener("touchend", onUp, { passive: false });
   el.addEventListener("touchcancel", onUp, { passive: false });
