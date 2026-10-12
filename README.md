@@ -12,7 +12,8 @@ BuzzCast runs on the host PC, serves a web app on the local network, and emulate
 
 ## What's new in v1.4
 
-- 🎮 **RPCS3 (PS3) support** — setup steps for PCSX2 and RPCS3 in the host's **Emulator Instructions** popup ([details below](#configuring-rpcs3)).
+- 🎮 **RPCS3 (PS3) support** — setup steps for PCSX2 and RPCS3 in the host's **Emulator Instructions** popup.
+- 📦 **Ready-made emulator profiles** — download [`BuzzCast.ini`](https://github.com/bacoinz/buzzcast/releases/latest/download/BuzzCast.ini) (PCSX2) or [`BuzzCast.yml`](https://github.com/bacoinz/buzzcast/releases/latest/download/BuzzCast.yml) (RPCS3), drop it in the emulator's profiles folder, load it and play ([how](#emulator-setup)).
 - ✅ **Buttons now register in-game** — presses that reached the emulator's mapping screen but were ignored during the game are fixed (keys are now held ~80 ms instead of <1 ms).
 - 💾 **Keybinds are saved** between runs in the downloadable app, and the **Install / Uninstall cloudflared** buttons work there too ([where files are kept](#where-buzzcast-keeps-its-files)).
 - 🔒 **Host-only controls** — remote players can no longer reach the Host page, change keys or shut BuzzCast down through the tunnel link.
@@ -160,17 +161,43 @@ Your saved **Keybinds** (`keymap.json`) and the `cloudflared` downloaded by the 
 
 ---
 
-## Configuring PCSX2
+## Emulator setup
+
+### ⚡ Easy setup — ready-made profiles *(recommended)*
+
+Download the profile for your emulator, put it in the folder below and load it — the whole controller setup is already done, just load and play. The profiles map every Buzz! player to BuzzCast's **default keys** (if you changed keys in the **Keybinds** menu, use the manual setup instead).
+
+| Emulator | Profile | Put it in |
+|---|---|---|
+| **PCSX2** (PS2 · 8 players) | [⬇ BuzzCast.ini](https://github.com/bacoinz/buzzcast/releases/latest/download/BuzzCast.ini) | **Windows:** `Documents\PCSX2\inputprofiles\` (portable install: `<PCSX2 folder>\inputprofiles\`)<br>**Linux:** `~/.config/PCSX2/inputprofiles/`<br>**macOS:** `~/Library/Application Support/PCSX2/inputprofiles/` |
+| **RPCS3** (PS3 · 7 players) | [⬇ BuzzCast.yml](https://github.com/bacoinz/buzzcast/releases/latest/download/BuzzCast.yml) | **Windows:** `<RPCS3 folder>\config\input_configs\global\`<br>**Linux:** `~/.config/rpcs3/input_configs/global/`<br>**macOS:** `~/Library/Application Support/rpcs3/input_configs/global/` |
+
+The same files are also in the [`profiles/`](profiles) folder of this repo.
+
+**PCSX2**
+1. Open **Settings → Controllers**, choose **BuzzCast** in **Editing Profile** and click **Apply Profile**.
+2. Start the game with the PCSX2 window in focus. That's it — all 8 players are mapped.
+
+> Applying a profile replaces your current PCSX2 bindings and hotkeys (PCSX2 asks first). The BuzzCast profile also frees the **`.`** key, which PCSX2 uses by default for *Turbo / Fast Forward (Hold)* but BuzzCast sends for player 8's green.
+
+**RPCS3**
+1. Open **Configuration → Input/Output**, set **Buzz! Emulated Controller** to **1 controller (1-4 players)** or **2 controllers (5-7 players)**, then **Apply** and **Save** (this one setting isn't part of the profile).
+2. Open **Configuration → Devices → Pads**, choose **BuzzCast** under **Configuration Files** and click **Save**.
+3. Start the game with the RPCS3 game window in focus. That's it — all 7 players are mapped (**Emulated Devices → Buzz** already matches the profile by default).
+
+> The host page's **Emulator Instructions** popup has these same steps, with download buttons.
+
+### Manual setup — PCSX2
 
 1. Open **Settings → Controllers**.
 2. For **4 players**: click **USB Port 1**, choose **Buzz! Controller**, map players 1–4.
-3. For **8 players**: also click **USB Port 2**, choose **Buzz! Controller**, map players 5–8.
+3. For **8 players**: also click **USB Port 2**, choose **Buzz! Controller**, map players 5–8 — and in **Settings → Hotkeys** clear **Turbo / Fast Forward (Hold)** (by default it's `.`, player 8's green).
 4. For each pad, map **Buzzer / Blue / Orange / Green / Yellow** to the keys shown in the host's **Keybinds** menu (defaults in the table above).
 5. Save and start the game with the PCSX2 window in focus.
 
 > ⚠️ **Buzz!: The Music Quiz** (the first game in the series) only supports 4 players.
 
-## Configuring RPCS3
+### Manual setup — RPCS3
 
 RPCS3's emulated Buzz! controllers read each player's **pad**, so keys are mapped in two hops: keyboard key → pad button (Pads), then pad button → Buzz! button (Emulated Devices).
 
@@ -190,8 +217,6 @@ RPCS3's emulated Buzz! controllers read each player's **pad**, so keys are mappe
 
 > ⚠️ With Buzz!, RPCS3 supports up to **7 players** — the PS3 has 7 controller ports, so player 8 can't be used.
 
-> The host page has an **Emulator Instructions** popup with the PCSX2 and RPCS3 steps.
-
 > 💡 While mapping in either emulator, you can tap the button on the phone instead of pressing the key — BuzzCast sends it to the focused window.
 
 ---
@@ -202,6 +227,7 @@ RPCS3's emulated Buzz! controllers read each player's **pad**, so keys are mappe
 |---|---|
 | Buttons do nothing in-game | The emulator's game window is not in focus, or the key mapping doesn't match the **Keybinds** menu. |
 | The emulator picks up the key while mapping, but nothing happens in-game | Update to **v1.4** or later. v1.0–v1.3 released each key after <1 ms, faster than PCSX2/RPCS3 read the Buzz! pad; keys are now held for ~80 ms. |
+| PCSX2 fast-forwards when player 8 presses green | PCSX2's default *Turbo / Fast Forward (Hold)* hotkey is `.`, player 8's green. Apply the BuzzCast profile, or clear that hotkey in **Settings → Hotkeys**. |
 | Buttons do nothing in-game (Windows, emulator run as administrator) | Windows blocks simulated keys from a normal app to an admin app. Run BuzzCast and the emulator the same way (both normal, or both as administrator). |
 | Phone can't open the page | Make sure the phone is on the same WiFi and your firewall allows port 3000. |
 | Buttons do nothing (Linux) | Needs an **X11** session (not Wayland) with `libxtst6` installed. |

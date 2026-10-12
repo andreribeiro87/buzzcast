@@ -7,6 +7,7 @@ All notable changes to BuzzCast. Versions follow the `BuzzCast v<x.y>` releases.
 ### New
 
 - **RPCS3 (PS3) support** — the host's **Emulator Instructions** popup (formerly "PCSX2 Instructions") now has **PCSX2** and **RPCS3** tabs with the setup steps for each. RPCS3 supports up to 7 Buzz! players (the PS3 has 7 controller ports).
+- **Ready-made emulator profiles** — `BuzzCast.ini` (PCSX2, all 8 players) and `BuzzCast.yml` (RPCS3, all 7 players) are attached to the release. Put the file in the emulator's profiles folder, load it and play — no manual mapping. Download buttons and folder paths are in the **Emulator Instructions** popup and the README.
 
 ### Fixes
 
@@ -16,6 +17,7 @@ All notable changes to BuzzCast. Versions follow the `BuzzCast v<x.y>` releases.
 - **Uninstall cloudflared fixed on Windows** — it now stops the tunnel before deleting the file (Windows can't delete a running `.exe`). Closing BuzzCast also stops the tunnel.
 - **Host controls are host-only** — the Host page, Keybinds, Install/Uninstall and Shut down only answer requests from the PC running BuzzCast, so remote players can't close the game or change keys through the tunnel link.
 - **Wake lock on iPhone** — re-requested on every button tap/release, since iOS only grants it from a user gesture.
+- **PCSX2 fast-forward on player 8's green** — PCSX2's default *Turbo / Fast Forward (Hold)* hotkey is `.`, which BuzzCast sends for player 8's green. The PCSX2 profile clears it, and the manual steps now say to.
 - Fixed the GitHub link on the lobby and host pages.
 
 ## v1.3

@@ -321,6 +321,14 @@ async function hostPage() {
     .instr-body th, .instr-body td { text-align: left; padding: 3px 14px 3px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
     .instr-body th { color: rgba(255,255,255,0.55); font-weight: 600; }
     .modal-head .tab { flex: 0 0 auto; padding: 6px 14px; font-size: clamp(0.75rem,1.1vw,0.9rem); }
+    .instr-body code { background: rgba(0,0,0,0.35); border-radius: 5px; padding: 1px 6px; font-size: 0.88em; word-break: break-all; }
+    .instr-body ul.dirs { margin: 6px 0 2px 1.1em; display: flex; flex-direction: column; gap: 3px; }
+    .instr-body .rec { font-size: 0.65em; background: #ffd23f; color: #2a1147; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
+    .instr-body .dl-btn { display: inline-block; margin: 2px 0 10px; background: linear-gradient(180deg,#6a2cc9,#4a1a99); color: #fff; text-decoration: none; font-weight: 700; border-radius: 10px; padding: 8px 16px; }
+    .instr-body .dl-btn:hover { opacity: 0.9; }
+    .instr-body details { margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 12px; }
+    .instr-body summary { cursor: pointer; font-weight: 800; color: #ffd23f; font-size: clamp(0.95rem,1.5vw,1.15rem); }
+    .instr-body details h4:first-of-type { margin-top: 12px; }
     .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 22px; border-bottom: 1px solid rgba(255,255,255,0.1); }
     .modal-head h3 { font-size: clamp(1.05rem,1.8vw,1.35rem); color: #ffd23f; font-weight: 800; }
     .modal-hint { font-size: clamp(0.68rem,1vw,0.82rem); color: rgba(255,255,255,0.5); }
@@ -450,9 +458,18 @@ async function hostPage() {
     }
 
     // ── Emulator instructions (popup, one tab per emulator) ──
+    // Easy setup = ready-made input profiles (profiles/ in the repo, attached to every
+    // GitHub release). Manual setup is kept in a <details> below it.
     // RPCS3's Buzz! device reads each player's *pad* (Devices → Pads), so keys go
     // key → pad button there, then pad button → Buzz! button in Emulated Devices.
     // The PS3 has 7 pad ports, hence max 7 players ("2 controllers (5-7 players)").
+    // Backslashes in paths are written as &#92; (this is inside a template literal
+    // *and* a JS string, so a literal backslash would be eaten twice).
+    const DL = "https://github.com/bacoinz/buzzcast/releases/latest/download/";
+    const DIRS = {
+      pcsx2: '<ul class="dirs"><li><b>Windows:</b> <code>Documents&#92;PCSX2&#92;inputprofiles</code> (portable: <code>&lt;PCSX2&gt;&#92;inputprofiles</code>)</li><li><b>Linux:</b> <code>~/.config/PCSX2/inputprofiles</code></li><li><b>macOS:</b> <code>~/Library/Application Support/PCSX2/inputprofiles</code></li></ul>',
+      rpcs3: '<ul class="dirs"><li><b>Windows:</b> <code>&lt;RPCS3&gt;&#92;config&#92;input_configs&#92;global</code></li><li><b>Linux:</b> <code>~/.config/rpcs3/input_configs/global</code></li><li><b>macOS:</b> <code>~/Library/Application Support/rpcs3/input_configs/global</code></li></ul>'
+    };
     const RPCS3_MAP = {
       en: '<table><tr><th>BuzzCast button</th><th>Pad button</th></tr><tr><td>Buzzer (red)</td><td>R1</td></tr><tr><td>Yellow</td><td>Cross</td></tr><tr><td>Green</td><td>Circle</td></tr><tr><td>Orange</td><td>Square</td></tr><tr><td>Blue</td><td>Triangle</td></tr></table>',
       pt: '<table><tr><th>Botão BuzzCast</th><th>Botão do pad</th></tr><tr><td>Buzzer (vermelho)</td><td>R1</td></tr><tr><td>Amarelo</td><td>Cross</td></tr><tr><td>Verde</td><td>Circle</td></tr><tr><td>Laranja</td><td>Square</td></tr><tr><td>Azul</td><td>Triangle</td></tr></table>'
@@ -460,14 +477,30 @@ async function hostPage() {
     const HOST_INSTR = {
       en: {
         pcsx2: '<div class="notice">⚠️ <strong>Buzz!: The Music Quiz</strong> (the first PS2 game) supports only 4 players, not 8.</div>'
+          + '<h4>⚡ Easy setup — ready-made profile <span class="rec">recommended</span></h4>'
+          + '<a class="dl-btn" href="' + DL + 'BuzzCast.ini" target="_blank">⬇ Download BuzzCast.ini</a>'
+          + '<ol><li>Put <code>BuzzCast.ini</code> in PCSX2\\'s <strong>inputprofiles</strong> folder:' + DIRS.pcsx2 + '</li>'
+          + '<li>In PCSX2 open <strong>Settings → Controllers</strong>, choose <strong>BuzzCast</strong> in <strong>Editing Profile</strong> and click <strong>Apply Profile</strong>.</li>'
+          + '<li>Start the game with the <strong>PCSX2 window in focus</strong> — all 8 players are ready!</li></ol>'
+          + '<div class="tip">ℹ️ Applying the profile replaces your current PCSX2 bindings and hotkeys (PCSX2 asks first). It also frees the <strong>.</strong> key, which PCSX2 uses for fast-forward by default but BuzzCast sends for player 8\\'s green. The profile uses BuzzCast\\'s <strong>default keys</strong> — if you changed them in <strong>🎮 Keybinds</strong>, use the manual setup.</div>'
+          + '<details><summary>Manual setup</summary>'
           + '<h4>1. Configure PCSX2 — up to 4 players</h4>'
           + '<ol><li>In PCSX2 open <strong>Settings → Controllers</strong>.</li><li>Select <strong>USB Port 1</strong> and choose <strong>Buzz! Controller</strong>.</li><li>Map each button to the key shown in the <strong>🎮 Keybinds</strong> menu.</li></ol>'
           + '<h4>2. For 5–8 players — add USB 2</h4>'
-          + '<ol><li>Still in <strong>Settings → Controllers</strong>, select <strong>USB Port 2</strong>.</li><li>Choose <strong>Buzz! Controller</strong> again and map players 5–8.</li></ol>'
+          + '<ol><li>Still in <strong>Settings → Controllers</strong>, select <strong>USB Port 2</strong>.</li><li>Choose <strong>Buzz! Controller</strong> again and map players 5–8.</li><li>In <strong>Hotkeys</strong>, clear <strong>Turbo / Fast Forward (Hold)</strong> — by default it\\'s the <strong>.</strong> key, player 8\\'s green.</li></ol>'
           + '<h4>3. Play</h4>'
           + '<ol><li>Start the game in PCSX2.</li><li>Keep the <strong>PCSX2 window in focus</strong> — required to receive button presses.</li></ol>'
-          + '<div class="tip">💡 While mapping, you can tap the button on the phone instead of pressing the key — BuzzCast sends it to the focused window.</div>',
+          + '<div class="tip">💡 While mapping, you can tap the button on the phone instead of pressing the key — BuzzCast sends it to the focused window.</div>'
+          + '</details>',
         rpcs3: '<div class="notice">⚠️ With Buzz!, RPCS3 supports up to <strong>7 players</strong> (the PS3 has 7 controller ports) — player 8 can\\'t be used.</div>'
+          + '<h4>⚡ Easy setup — ready-made profile <span class="rec">recommended</span></h4>'
+          + '<a class="dl-btn" href="' + DL + 'BuzzCast.yml" target="_blank">⬇ Download BuzzCast.yml</a>'
+          + '<ol><li>Put <code>BuzzCast.yml</code> in RPCS3\\'s <strong>input_configs/global</strong> folder:' + DIRS.rpcs3 + '</li>'
+          + '<li>Open <strong>Configuration → Input/Output</strong>, set <strong>Buzz! Emulated Controller</strong> to <strong>1 controller (1-4 players)</strong> or <strong>2 controllers (5-7 players)</strong>, then <strong>Apply</strong> and <strong>Save</strong> (this setting isn\\'t part of the profile).</li>'
+          + '<li>Open <strong>Configuration → Devices → Pads</strong>, choose <strong>BuzzCast</strong> under <strong>Configuration Files</strong> and click <strong>Save</strong>.</li>'
+          + '<li>Start the game with the <strong>RPCS3 game window in focus</strong> — all 7 players are ready!</li></ol>'
+          + '<div class="tip">ℹ️ The profile uses BuzzCast\\'s <strong>default keys</strong> — if you changed them in <strong>🎮 Keybinds</strong>, use the manual setup. <strong>Emulated Devices → Buzz</strong> already matches it by default.</div>'
+          + '<details><summary>Manual setup</summary>'
           + '<h4>1. Turn on the emulated Buzz! controllers</h4>'
           + '<ol><li>In RPCS3 open <strong>Configuration → Input/Output</strong>.</li><li>In <strong>Buzz! Emulated Controller</strong> choose <strong>1 controller (1-4 players)</strong> or <strong>2 controllers (5-7 players)</strong>.</li><li>Click <strong>Apply</strong>, then <strong>Save</strong>.</li></ol>'
           + '<h4>2. Give each player a keyboard pad</h4>'
@@ -477,17 +510,34 @@ async function hostPage() {
           + '<h4>4. Play</h4>'
           + '<ol><li>Start the game in RPCS3.</li><li>Keep the <strong>RPCS3 game window in focus</strong> — required to receive button presses.</li></ol>'
           + '<div class="tip">💡 While mapping, you can tap the button on the phone instead of pressing the key — BuzzCast sends it to the focused window.</div>'
+          + '</details>'
       },
       pt: {
         pcsx2: '<div class="notice">⚠️ O <strong>Buzz!: The Music Quiz</strong> (o primeiro jogo da PS2) suporta apenas 4 jogadores, não 8.</div>'
+          + '<h4>⚡ Configuração rápida — perfil pronto <span class="rec">recomendado</span></h4>'
+          + '<a class="dl-btn" href="' + DL + 'BuzzCast.ini" target="_blank">⬇ Transferir BuzzCast.ini</a>'
+          + '<ol><li>Coloca o <code>BuzzCast.ini</code> na pasta <strong>inputprofiles</strong> do PCSX2:' + DIRS.pcsx2 + '</li>'
+          + '<li>No PCSX2 abre <strong>Settings → Controllers</strong>, escolhe <strong>BuzzCast</strong> em <strong>Editing Profile</strong> e clica em <strong>Apply Profile</strong>.</li>'
+          + '<li>Inicia o jogo com a <strong>janela do PCSX2 em foco</strong> — os 8 jogadores ficam prontos!</li></ol>'
+          + '<div class="tip">ℹ️ Aplicar o perfil substitui as teclas e atalhos atuais do PCSX2 (o PCSX2 pede confirmação). Também liberta a tecla <strong>.</strong>, que o PCSX2 usa por predefinição para acelerar o jogo mas que a BuzzCast envia para o verde do jogador 8. O perfil usa as <strong>teclas predefinidas</strong> da BuzzCast — se as mudaste no menu <strong>🎮 Teclas</strong>, usa a configuração manual.</div>'
+          + '<details><summary>Configuração manual</summary>'
           + '<h4>1. Configurar o PCSX2 — até 4 jogadores</h4>'
           + '<ol><li>No PCSX2 abre <strong>Settings → Controllers</strong>.</li><li>Seleciona <strong>USB Port 1</strong> e escolhe <strong>Buzz! Controller</strong>.</li><li>Mapeia cada botão para a tecla indicada no menu <strong>🎮 Teclas</strong>.</li></ol>'
           + '<h4>2. Para 5–8 jogadores — adiciona USB 2</h4>'
-          + '<ol><li>Ainda em <strong>Settings → Controllers</strong>, seleciona <strong>USB Port 2</strong>.</li><li>Escolhe novamente <strong>Buzz! Controller</strong> e mapeia os jogadores 5–8.</li></ol>'
+          + '<ol><li>Ainda em <strong>Settings → Controllers</strong>, seleciona <strong>USB Port 2</strong>.</li><li>Escolhe novamente <strong>Buzz! Controller</strong> e mapeia os jogadores 5–8.</li><li>Em <strong>Hotkeys</strong>, apaga o atalho <strong>Turbo / Fast Forward (Hold)</strong> — por predefinição é a tecla <strong>.</strong>, o verde do jogador 8.</li></ol>'
           + '<h4>3. Jogar</h4>'
           + '<ol><li>Inicia o jogo no PCSX2.</li><li>Mantém a <strong>janela do PCSX2 em foco</strong> — necessário para receber os botões.</li></ol>'
-          + '<div class="tip">💡 Ao mapear, podes carregar no botão do telemóvel em vez de premir a tecla — a BuzzCast envia-a para a janela em foco.</div>',
+          + '<div class="tip">💡 Ao mapear, podes carregar no botão do telemóvel em vez de premir a tecla — a BuzzCast envia-a para a janela em foco.</div>'
+          + '</details>',
         rpcs3: '<div class="notice">⚠️ Com o Buzz!, o RPCS3 suporta até <strong>7 jogadores</strong> (a PS3 tem 7 portas de comando) — o jogador 8 não pode ser usado.</div>'
+          + '<h4>⚡ Configuração rápida — perfil pronto <span class="rec">recomendado</span></h4>'
+          + '<a class="dl-btn" href="' + DL + 'BuzzCast.yml" target="_blank">⬇ Transferir BuzzCast.yml</a>'
+          + '<ol><li>Coloca o <code>BuzzCast.yml</code> na pasta <strong>input_configs/global</strong> do RPCS3:' + DIRS.rpcs3 + '</li>'
+          + '<li>Abre <strong>Configuration → Input/Output</strong>, em <strong>Buzz! Emulated Controller</strong> escolhe <strong>1 controller (1-4 players)</strong> ou <strong>2 controllers (5-7 players)</strong> e clica em <strong>Apply</strong> e <strong>Save</strong> (esta opção não faz parte do perfil).</li>'
+          + '<li>Abre <strong>Configuration → Devices → Pads</strong>, escolhe <strong>BuzzCast</strong> em <strong>Configuration Files</strong> e clica em <strong>Save</strong>.</li>'
+          + '<li>Inicia o jogo com a <strong>janela do jogo do RPCS3 em foco</strong> — os 7 jogadores ficam prontos!</li></ol>'
+          + '<div class="tip">ℹ️ O perfil usa as <strong>teclas predefinidas</strong> da BuzzCast — se as mudaste no menu <strong>🎮 Teclas</strong>, usa a configuração manual. O <strong>Emulated Devices → Buzz</strong> já corresponde ao perfil por predefinição.</div>'
+          + '<details><summary>Configuração manual</summary>'
           + '<h4>1. Ativar os comandos Buzz! emulados</h4>'
           + '<ol><li>No RPCS3 abre <strong>Configuration → Input/Output</strong>.</li><li>Em <strong>Buzz! Emulated Controller</strong> escolhe <strong>1 controller (1-4 players)</strong> ou <strong>2 controllers (5-7 players)</strong>.</li><li>Clica em <strong>Apply</strong> e depois em <strong>Save</strong>.</li></ol>'
           + '<h4>2. Dar a cada jogador um pad de teclado</h4>'
@@ -497,6 +547,7 @@ async function hostPage() {
           + '<h4>4. Jogar</h4>'
           + '<ol><li>Inicia o jogo no RPCS3.</li><li>Mantém a <strong>janela do jogo do RPCS3 em foco</strong> — necessário para receber os botões.</li></ol>'
           + '<div class="tip">💡 Ao mapear, podes carregar no botão do telemóvel em vez de premir a tecla — a BuzzCast envia-a para a janela em foco.</div>'
+          + '</details>'
       }
     };
     let instrEmu = localStorage.getItem("buzz_emu") || "pcsx2";
